@@ -1,0 +1,10 @@
+# Directories
+tests
+doc
+
+#files
+*.o
+*.mod
+*.md
+*.a
+*.x
