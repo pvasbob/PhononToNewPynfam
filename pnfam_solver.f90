@@ -187,6 +187,12 @@ contains
          ! Solve the new X/Y, P/Q
          call complex_emult_bbm(Greens_re, Greens_im, dHqp_re, dHqp_im,&
                                          dRqp_re, dRqp_im)
+
+        !write(*,*) nxy, sizeof(Fqp), sizeof(dHqp_re), sizeof(dRqp_re)
+         write(*,*) nxy, size(dHqp_re%m11%elem),size(dHqp_re%m12%elem),size(dHqp_re%m21%elem),size(dHqp_re%m22%elem)
+         call effective_WX(nxy, dRqp_re%m12%elem, dRqp_im%m12%elem, dRqp_re%m21%elem,dRqp_im%m21%elem)
+
+
          if (use_diagonal_blocks) then
             call emult_bbm(T, dRqp_re, dRqp_re)
             call emult_bbm(T, dRqp_im, dRqp_im)

@@ -1,31 +1,28 @@
 !------------------------------------------------------------------------------
-!> This module contains routines for computing matrix elements of
-!> charge-changing external fields in single-particle configuration space and
-!> storing the properties of the external field in pnfam's type_extfield.
-!>
-!> @authors M.T. Mustonen and T. Shafer, UNC Chapel Hill, 2013-15
-!> @authors E.M. Ney, UNC Chapel Hill, 2018-
+! extfield.f90
+!
+! Charge-changing external fields for the pnFAM code.
+!
+! M.T. Mustonen and T. Shafer, UNC Chapel Hill, 2013-15
 !------------------------------------------------------------------------------
-module pnfam_extfield
-   use pnfam_logger
-   use pnfam_constants, only : pi
+module extfield
+   use logger
    implicit none
    private
-
+   
    integer,  parameter :: dp = kind(1d0)
+   real(dp), parameter :: pi = 3.141592653589793238462643_dp
 
    character(len=1), dimension(0:1), parameter :: cbeta = (/'+', '-'/)
-
+   
    public :: init_external_field
    public :: number_crossterms
    public :: setup_crossterms
+   public :: print_crossterms
    public :: init_fam_mapping
    public :: deallocate_extfield
    public :: deallocate_crossterms
-   public :: set_use_2bc
-   public :: tbc_nmlda_da1
-   public :: dme_exc
-
+   
 contains
 
    !----------------------------------------------------------------------------
@@ -34,29 +31,29 @@ contains
    ! various quantities and ALSO set up the FAM s.p. matrix itself. It is
    ! accessible via op%mat%elem (cf. f%elem previously).
    !----------------------------------------------------------------------------
-   subroutine init_external_field(beta_type, label, k, op, use_2bc)
-      use type_blockmatrix, only : allocate_blockmatrix, copy_block_structure
-      use pnfam_constants, only : translate_uppercase
-      use type_extfield
+   subroutine init_external_field(label, k, op)
+      use constants, only : translate_uppercase
+      use external_field_type
       implicit none
 
-      character(len=1),     intent(in)    :: beta_type
       character(len=*),     intent(in)    :: label
       integer,              intent(in)    :: k
       type(external_field), intent(inout) :: op
-      integer, optional, intent(in) :: use_2bc
 
+      integer :: l
+      
       ! Operator label
-      op%label = trim(label)
+      l = len_trim(label)
+      op%label = label(1:l-1)
+      
+      ! Normalize to uppercase
       call translate_uppercase(op%label)
 
       ! Beta minus
-      if (trim(beta_type) == '-') then
+      if (label(l:l) == '-') then
          op%beta_minus = .true.
-      else if (trim(beta_type) == '+') then
-         op%beta_minus = .false.
       else
-         call error_unknown_operator('beta_type='//trim(beta_type))
+         op%beta_minus = .false.
       end if
 
       ! Parity
@@ -69,11 +66,12 @@ contains
             op%parity_even = .false.
          case default
             call error_unknown_operator(trim(op%label))
+            stop
       end select
-
+      
       ! Angular momentum projection
       op%k = k
-
+      
       ! Rank (needed for rotational energy correction)
       select case (op%label)
          case ('F', 'RS0', 'PS0')
@@ -83,67 +81,42 @@ contains
          case ('RS2')
             op%rank = 2
          case default
-            call writelog(" ERROR: Rank not implemented for the operator")
-            call writelog(" This should not happen, fix it in extfield.f90")
-            call abort
+            write(*,'(A)') "ERROR: Rank not implemented for the operator"
+            write(*,'(A)') "This should not happen, fix it in extfield.f90"
+            stop
       end select
-
-      ! Two body currents
-      op%use_2bc = 0
-      if (present(use_2bc)) then
-         call set_use_2bc(op, use_2bc)
-      end if
-
+      
       ! Matrix structure
-      !   - 2 body currents: Add additional blockmatrix for pairing field
-      !   - 1 body GT is (f11, 0; 0, 0), GT2BC has (f11, f12; -f12*, -f11*)
       call init_fam_mapping(op)
-      if (op%use_2bc(3) > 1) then ! Delta needed if 2 or 3
-         call allocate_blockmatrix(op%mat12, size(op%mat%elem))
-         call copy_block_structure(op%mat, op%mat12)
-      end if
-
       call ext_field_operator(op)
-
+      
    end subroutine init_external_field
 
+
+   !----------------------------------------------------------------------------
+   ! Construct the chosen charge-changing operator in the single-particle basis.
+   !----------------------------------------------------------------------------
    subroutine ext_field_operator(op)
+      use blockmatrix_type
+      use external_field_type
+      use hfbtho_basis, only : db, isstart, nl, ns, nghl, wf, wfdr, wfdz, y, z
       use iso_fortran_env, only : error_unit
-      use type_extfield
-      use type_blockmatrix, only : nb, db, isstart
-      use hfb_solution, only : nl, ns, nghl, wf, wfdr, wfdz, y, z
-      use hfb_solution, only : hfb_density_coord, nr, nz, npar
-      use type_extfield_2bc, only : caux, cd, init_extfield_2bc_type
-      use pnfam_constants, only : IT_NEUTRON, IT_PROTON
-      ! DME Direct
-      !use type_extfield_2bc, only : c3
-      !use pnfam_constants, only : Mpi, hbarc
-      !use hfb_solution, only : d2rho, drrho, dzrho, get_wf_2nd_derivs
 
       implicit none
       type(external_field), intent(inout) :: op
-
+      
       ! These are assigned from the operator
       integer :: K
-      logical :: pty, lpr
+      logical :: pty
       character(len=80) :: label
 
       integer :: ipt, i1, i2, ix1, ix2, ibx1, ibx2, nd1, nd2
       integer :: xl1, xl2, xs1, xs2
-      real(dp), dimension(nghl) :: wf_1, wf_2, dr_wf_2, dz_wf_2, dr_wf_1, dz_wf_1, r
-      real(dp), dimension(nghl) :: rho_fac, rhon, rhop
-
-      ! DME Direct
-      !real(dp), dimension(nghl) :: d2z_wf_1, d2r_wf_1, drz_wf_1
-      !real(dp), dimension(nghl) :: d2z_wf_2, d2r_wf_2, drz_wf_2
-      !real(dp), dimension(nghl) :: r0
-      !real(dp) :: dme_c1, me, pre
-
-      integer :: debug=0
+      real(dp), dimension(nghl) :: wf_1, wf_2, dr_wf_2, dz_wf_2, r
 
       ! Define r(:) = 1/(1/rho)
       r(:) = 1.0_dp/y(:)
-
+      
       ! Quantities taken from the operator
       K = op%k
       pty = op%parity_even
@@ -153,45 +126,17 @@ contains
       call assert_parity(label=label, pty=pty)
       call assert_K_in_range(label=label, K=K)
 
-      ! Compute contact term (sigma tau rho) and/or NM+LDA (sigma tau F(rho))
-      rho_fac = 1.0_dp
-      if (op%use_2bc(2) /= 0) then
-         call init_extfield_2bc_type(.false.)
-         rho_fac = 0; rhon = 0; rhop = 0
-         call hfb_density_coord(IT_NEUTRON,rhon)
-         call hfb_density_coord(IT_PROTON, rhop)
-
-         ! DME direct
-         !dme_c1 = -(caux*4.0_dp*c3)!*((hbarc*hbarc)/(Mpi*Mpi))
-         !r0 = 0
-         !r0 = rhon + rhop ! N2LO
-         !r0 = r0 + (d2rho(:,IT_NEUTRON)+d2rho(:,IT_PROTON))*(hbarc*hbarc)/(Mpi*Mpi) ! N4LO
-
-         ! Contact term (same for SNM, ASNM, DME, Full-TBC)
-         rho_fac = (caux*2.0_dp*cd)*(rhon + rhop)
-         if (op%use_2bc(2) == 2) then
-            ! Symmetric nuclear matter calculation at P=0
-            rho_fac = rho_fac + tbc_nmlda_da1(rhon, rhop, 0.0_dp, .true.)
-         else if (op%use_2bc(2) == 3) then
-            ! Asymmetric nuclear matter calculation at P=0
-            rho_fac = rho_fac + tbc_nmlda_da1(rhon, rhop, 0.0_dp, .false.)
-         else if (op%use_2bc(2) == 4 .or. op%use_2bc(2) == 5) then
-            ! DME exchange term
-            rho_fac = rho_fac + dme_exc()
-         end if
-      end if
-
       ! Loop over the FAM block structure to do the calculation
-      ipt = 0; op%mat%elem(:) = 0
+      ipt = 0;  op%mat%elem(:) = 0
       do ibx1 = 1, nb
 
          ! Determine the range of particle indices in this block
          ibx2 = op%mat%ir2c(ibx1)
          if (ibx2 == 0) cycle
-
+         
          nd1 = db(ibx1) ; nd2 = db(ibx2)
          if (nd1 == 0 .or. nd2 == 0) cycle
-
+         
          do i2=1, nd2
             ! Calculate the true index of the state |2>
             ix2 = i2 + isstart(ibx2) - 1
@@ -210,14 +155,13 @@ contains
 
                ! Wave functions
                wf_1 = wf(:,ix1)
-               dr_wf_1 = wfdr(:,ix1)
-               dz_wf_1 = wfdz(:,ix1)
 
                ! Quantum numbers
                xl1 = nl(ix1);  xs1 = ns(ix1)
 
                ! Matrix element identifier
                ipt = ipt + 1
+
 
                !----------------------------------------------------------------
                ! Definition of the various external field s.p. operators
@@ -228,6 +172,7 @@ contains
                   ! ------------------------------
                   case default
                      call error_unknown_operator(trim(label))
+                     stop
 
 
                   ! Fermi (1)
@@ -241,64 +186,16 @@ contains
                   ! Gamow-Teller (sigma_K)
                   ! ------------------------------
                   case ('GT')
-                     lpr = .false.
                      select case (K)
                         case (0)
                            if ((xl1 == xl2) .and. (xs1 == xs2)) then
-                              op%mat%elem(ipt) = xs1*dot_product(wf_1(:), rho_fac(:)*wf_2(:))
-                              lpr = .true.
+                              op%mat%elem(ipt) = xs1*dot_product(wf_1(:), wf_2(:))
                            end if
                         case (1,-1)
                            if ((xl1 == xl2) .and. (xs1 == xs2 + 2*K)) then
-                              op%mat%elem(ipt) = -K*sqrt(2.0_dp)*dot_product(wf_1(:), rho_fac(:)*wf_2(:))
-                              lpr = .true.
+                              op%mat%elem(ipt) = -K*sqrt(2.0_dp)*dot_product(wf_1(:), wf_2(:))
                            end if
                      end select
-
-                     !! Gamow-Teller 2BC DME ((sigma.Del)Del(rho + Del^2 rho/m^2)) - IBP twice
-                     !! ------------------------------
-                     !if (op%use_2bc(2) == 4) then
-                     !   me = 0
-                     !   call get_wf_2nd_derivs(ix2, d2z_wf_2, d2r_wf_2, drz_wf_2)
-                     !   call get_wf_2nd_derivs(ix1, d2z_wf_1, d2r_wf_1, drz_wf_1)
-                     !   select case (K)
-                     !      case (0)
-                     !         pre = dme_c1
-                     !         if ((xl1 == xl2) .and. (xs1 == xs2)) then ! Sz
-                     !            me = xs1*pre*sum((d2z_wf_1*wf_2 + wf_1*d2z_wf_2 + 2.0_dp*dz_wf_1*dz_wf_2)*r0)
-                     !            op%mat%elem(ipt) = op%mat%elem(ipt) + me
-                     !         else if (((xl1 == xl2 - 1) .and. (xs1 == xs2 + 2)) .or. &
-                     !                  ((xl1 == xl2 + 1) .and. (xs1 == xs2 - 2))) then ! S+ or S-
-                     !            me = pre*sum((drz_wf_1*wf_2 + wf_1*drz_wf_2 + dr_wf_1*dz_wf_2 + dz_wf_1*dr_wf_2 &
-                     !                          + y*(dz_wf_1*wf_2 + wf_1*dz_wf_2))*r0)
-                     !            op%mat%elem(ipt) = op%mat%elem(ipt) + me
-                     !         end if
-
-                     !      case (1,-1)
-                     !         pre = -K*0.5_dp*sqrt(2.0_dp)*dme_c1
-                     !         if ((xl1 == xl2 + K) .and. (xs1 == xs2)) then ! Sz
-                     !            me = xs1*pre*sum((drz_wf_1*wf_2 + wf_1*drz_wf_2 + dr_wf_1*dz_wf_2 + dz_wf_1*dr_wf_2 &
-                     !                              + y*(dz_wf_1*wf_2 + wf_1*dz_wf_2))*r0)
-                     !            op%mat%elem(ipt) = op%mat%elem(ipt) + me
-                     !         else if ((xl1 == xl2 + K - 1) .and. (xs1 == xs2 + 2)) then ! S+
-                     !            me = pre*sum((d2r_wf_1*wf_2 + wf_1*d2r_wf_2 + 2.0_dp*dr_wf_1*dr_wf_2 &
-                     !                          + (2 - K)*y*(dr_wf_1*wf_2 + wf_1*dr_wf_2))*r0)
-                     !            op%mat%elem(ipt) = op%mat%elem(ipt) + me
-                     !         else if ((xl1 == xl2 + K + 1) .and. (xs1 == xs2 - 2)) then ! S-
-                     !            me = pre*sum((d2r_wf_1*wf_2 + wf_1*d2r_wf_2 + 2.0_dp*dr_wf_1*dr_wf_2 &
-                     !                          + (2 + K)*y*(dr_wf_1*wf_2 + wf_1*dr_wf_2))*r0)
-                     !            op%mat%elem(ipt) = op%mat%elem(ipt) + me
-                     !         end if
-
-                     !   end select
-                     !end if
-
-                     if (lpr.and.debug<0) then
-                     write(*,'(L2,2x,3i4,2x,1e30.20, " |O: ", 2i3, " |L: ", 2i3, " |s: ", 2i3, " |r: ", 2i3, " |z: ", 2i3,&
-                         &" |p: ", 2i3, " |diff_O,L,S,P: ",4i3)') (op%mat%ir2c(ibx1) == ibx2), &
-                     & ix1, ix2, ipt, op%mat%elem(ipt), 2*xl1+xs1, 2*xl2+xs2, xl1, xl2, xs1, xs2, nr(ix1), nr(ix2),nz(ix1), nz(ix2), &
-                     & npar(ix1), npar(ix2),  2*xl1+xs1-(2*xl2+xs2), xl1-xl2, xs1-xs2, npar(ix1)-npar(ix2)
-                     end if
 
 
                   ! R (Sqrt(4\pi/3)*rY_1K = r_K)
@@ -407,10 +304,6 @@ contains
          end do ! |2>
       end do ! blocks
 
-      if (debug/=0) then
-         print *, "END GT 1Body"
-      end if
-
    end subroutine ext_field_operator
 
 
@@ -422,20 +315,23 @@ contains
       implicit none
       logical,           intent(in) :: pty
       character(len=80), intent(in) :: label
-
+      
       select case (label)
          ! Even parity - parity_even .eqv. .TRUE.
          case ('F', 'GT')
             if (pty .eqv. .false.) then
                call error_wrong_parity(label)
+               stop
             end if
          ! Odd parity - parity_even .eqv. .FALSE.
          case  ('RS0', 'RS1', 'RS2', 'R', 'P', 'PS0')
             if (pty .eqv. .true.) then
                call error_wrong_parity(label)
+               stop
             end if
          case default
             call error_unknown_operator(label)
+            stop
       end select
    end subroutine assert_parity
 
@@ -453,59 +349,26 @@ contains
          case ('F', 'RS0', 'PS0')
             if (abs(K) > 0) then
                call error_K_out_of_range(label, 0)
+               stop
             end if
          ! Kmax = 1
          case  ('GT', 'R', 'P', 'RS1')
             if (abs(K) > 1) then
                call error_K_out_of_range(label, 1)
+               stop
             end if
          ! Kmax = 2
          case ('RS2')
             if (abs(K) > 2) then
                call error_K_out_of_range(label, 2)
+               stop
             end if
          case default
             call error_unknown_operator(label)
+            stop
       end select
    end subroutine assert_K_in_range
 
-   !----------------------------------------------------------------------------
-   ! Assertion regarding use_2bc values
-   !----------------------------------------------------------------------------
-   subroutine set_use_2bc(op, use_2bc)
-      use type_extfield
-      use pnfam_constants, only : get_digit
-      implicit none
-      type(external_field), intent(inout) :: op
-      integer, intent(in) :: use_2bc
-      integer :: ierr, i1, i2, i3
-
-      ierr = 0
-      op%use_2bc = 0
-      if (use_2bc == 0) return
-
-      ! Extract digits
-      i1 = get_digit(use_2bc, 2) ! 1=1+2Body, 2=2Body only 
-      i2 = get_digit(use_2bc, 1) ! 1=Full Fam, 2=SNM+LDA, 3=ASNM+LDA
-      i3 = get_digit(use_2bc, 0) ! 1=Gamma, 2=Delta, 3=Gamma+Delta
-      op%use_2bc(1) = i1
-      op%use_2bc(2) = i2
-      op%use_2bc(3) = i3
-
-      ! Check valid digits
-      if ((i1 < 1 .or. i1 > 2) .or. (i2 < 1 .or. i2 > 5) .or. (i3 < 1 .or. i3 > 3)) then
-         ierr = 1
-      ! Check valid combos: NM+LDA (i1=2,3) has only Gamma (i3=1) ... and DME?
-      else if (i1 /= 1 .and. i3 /= 1) then
-         ierr = 1
-      ! Only Gamma is implemented as of June 2021
-      else if (i3 /= 1) then
-         ierr = 2
-      end if
-      if (ierr==1) call abort(" Error: Invalid value supplied for two_body_current_mode.")
-      if (ierr==2) call abort(" Error: This two_body_current_mode is not yet operational.")
-  
-   end subroutine set_use_2bc
 
    !----------------------------------------------------------------------------
    ! Error messages for various cases
@@ -513,32 +376,24 @@ contains
    subroutine error_unknown_operator(name)
       implicit none
       character(len=*), intent(in) :: name
-      character(len=200) :: st
 
-      write(st,'(3a)') 'Error: Unknown operator "', trim(name), '" in extfield.'
-      call abort(st)
+      write(*,'(/3a)') 'Error: Unknown operator "', trim(name), '" in extfield.'
    end subroutine error_unknown_operator
 
    subroutine error_wrong_parity(name)
       implicit none
       character(len=*), intent(in) :: name
-      character(len=200) :: st
 
-      write(st,'(3a)') 'Error: Incorrect parity for operator "', trim(name), '" in extfield.'
-      call abort(st)
+      write(*,'(/3a)') 'Error: Incorrect parity for operator "', trim(name), '" in extfield.'
    end subroutine error_wrong_parity
 
    subroutine error_K_out_of_range(name, K_max)
       implicit none
       integer,          intent(in) :: K_max
       character(len=*), intent(in) :: name
-      character(len=200) :: st
 
-      write(st,'(3a)') 'Error: K out of range for operator "', trim(name), '" in extfield.'
-      call writelog(st)
-      write(st,'(a, 1i1)')   'Expected |K| <= ', K_max
-      call writelog(st)
-      call abort
+      write(*,'(/3a)') 'Error: K out of range for operator "', trim(name), '" in extfield.'
+      write(*,'(a, 1i1)')   'Expected |K| <= ', K_max
    end subroutine error_K_out_of_range
    
    
@@ -547,9 +402,9 @@ contains
    ! and parity;  The HFBTHO basis must be read in before calling this!
    !-----------------------------------------------------------------------------
    subroutine init_fam_mapping(op)
-      use type_blockmatrix, only : allocate_blockmatrix, nb, db
-      use type_extfield
-      use hfb_solution, only : nl, ns, npar
+      use blockmatrix_type
+      use external_field_type
+      use hfbtho_basis, only : nl, ns, npar
       implicit none
       
       type(external_field), intent(inout) :: op
@@ -562,8 +417,7 @@ contains
       integer :: aux1(nb), aux2(nb)
       integer :: nbb                          ! the number of FAM blocks
       integer, allocatable :: ib1(:), ib2(:)  ! the THO basis blocks the FAM block connects <1|FAM|2>
-      logical :: pty_blocks
-
+      
       !----------------------------QQst             modify18
       integer :: qqj,qqi
       integer :: NumberofHpn, NumberofHpn_check                 !!!Q: number of elements of H20 like matrix.
@@ -571,40 +425,31 @@ contains
       integer, allocatable :: Ph_sum_db_colm1(:)          !!!Q: dimension is iHFB_NB, record sum of nd of first column minus 1 blocks.
       integer,allocatable :: Ph_select(:,:)
       !
-       open(70,file='AA_extfield_any',access='append')
-       open(71,file='AA_extfield_binfo',access='append')
-       open(72,file='AA_extfield_select_check',access='append')
-       open(73,file='AA_extfield_output',access='append')
-       write(70,*) 'extfield_Call'
-       write(71,*) 'extfield_Call'
-       write(72,*) 'extfield_Call'
-       write(73,*) 'extfield_Call'
+      open(30,file='AA_extfield_any',access='append')
+      open(31,file='AA_extfield_binfo',access='append')
+      open(32,file='AA_extfield_select_check',access='append')
+      open(33,file='AA_extfield_output',access='append')
+      write(30,*) 'extfield_Call'
+      write(31,*) 'extfield_Call'
+      write(32,*) 'extfield_Call'
+      write(33,*) 'extfield_Call'
       !----------------------------QQend
  
-      
+     
       ! K and parity come from the operator itself
       k = op%k
       pty = op%parity_even
       
       ! Since there may be empty (missing) blocks in the THO, we have to count
       ! the number of blocks we'll have the brute way
-      pty_blocks = .true.
-      ip1 = 1
-      do i1=1,nb
-         if (any(npar(ip1:ip1+db(i1)-1) /= npar(ip1))) then
-            pty_blocks = .false.
-            exit
-         end if
-         ip1 = ip1 + db(i1)
-      end do
       nbb = 0
       ip1 = 1
       do i1=1,nb
          ip2 = 1
          do i2=1,nb
             ! Use the first state in the block to determine if Omega and parity match
-            if ( (2*nl(ip1)+ns(ip1)-2*nl(ip2)-ns(ip2) == 2*k) .and. &
-                 (.not. pty_blocks .or. (pty_blocks .and. (npar(ip1)==npar(ip2) .eqv. pty))) ) then
+            if (2*nl(ip1)+ns(ip1)-2*nl(ip2)-ns(ip2) == 2*k .and. &
+               ((npar(ip1) == npar(ip2)) .eqv. pty)) then
                ! Found a correspondence: add it to the temporary FAM block list
                ! and exit the inner loop
                nbb = nbb + 1
@@ -617,7 +462,6 @@ contains
          ip1 = ip1 + db(i1)
       end do
       
-
       !--------------------------------------QQst  modify18
       ! QQ:print out nozero block info.
       !--------------------------------
@@ -626,10 +470,10 @@ contains
       Ph_select=0
       !
       NumberofHpn = 0
-      write(71,*) 'print out nozero block info.'
+      write(31,*) 'print out nozero block info.'
       Do qqj=1,nbb
          NumberofHpn = NumberofHpn + db(aux1(qqj))*db(aux2(qqj))
-         write(71,*) qqj,' ','*',' ', aux1(qqj), aux2(qqj),' ','*',' ', db(aux1(qqj)), db(aux2(qqj)), NumberofHpn
+         write(31,*) qqj,' ','*',' ', aux1(qqj), aux2(qqj),' ','*',' ', db(aux1(qqj)), db(aux2(qqj)), NumberofHpn
          Ph_select(aux2(qqj),aux1(qqj))=1
       end do
       !
@@ -643,23 +487,23 @@ contains
          ! write( ,*)  qqj, id(qqj), Ph_sum_db, Ph_sum_db_colm1(qqj)
       end do
       !
-      write(73,*) 'nb',' ',nb
-      write(73,*) 'NumberofHpn',' ',NumberofHpn
-      write(73,*) 'db'
+      write(33,*) 'nb',' ',nb
+      write(33,*) 'NumberofHpn',' ',NumberofHpn
+      write(33,*) 'db'
       do qqi = 1, nb
-         write(73,*) qqi,' ',db(qqi)
+         write(33,*) qqi,' ',db(qqi)
       end do
-      write(73,*) 'Ph_sum_db',' ',Ph_sum_db
-      write(73,*) 'Ph_sum_db_colm1'
+      write(33,*) 'Ph_sum_db',' ',Ph_sum_db
+      write(33,*) 'Ph_sum_db_colm1'
       do qqi = 1, nb
-         write(73,*)  qqi ,' ',Ph_sum_db_colm1(qqi)
+         write(33,*)  qqi ,' ',Ph_sum_db_colm1(qqi)
       end do
       !
-      write(73,*) 'Ph_select'
+      write(33,*) 'Ph_select'
       do qqj=1, nb
          do qqi=1,nb
            if(Ph_select(qqi,qqj)==1) then 
-               write(73,*) qqj,qqi, Ph_select(qqi,qqj)
+               write(33,*) qqj,qqi, Ph_select(qqi,qqj)
            end if
          end do
       end do
@@ -687,27 +531,21 @@ contains
          do qqi=1,nb
              if(Ph_select(qqi,qqj)==1) then
                  NumberofHpn_check=NumberofHpn_check+db(qqj)*db(qqi)
-                 write(72,*) qqj,qqi, NumberofHpn_check
+                 write(32,*) qqj,qqi, NumberofHpn_check
              end if
          end do
       end do
       !
       !---------------------------------QQend 
-
-
-
-      close(70)
-      close(71)
-      close(72)
-      close(73)
-
+      ! 
       ! Now that we know how many FAM blocks exist, we can allocate the actual
       ! FAM block arrays and fill them with the temporary arrays
       if (nbb > 0) then
          allocate(ib1(nbb), ib2(nbb))
          ib1(:) = aux1(1:nbb) ; ib2(:) = aux2(1:nbb)
       else
-         call abort(" ERROR: The K and parity are outside the model space. Aborting.")
+         write(*,*) "The K and parity are outside the model space. Aborting."
+         stop
       end if
       
       ! Initialize the block structure of the matrix f
@@ -724,13 +562,18 @@ contains
             ip1 = ip1 + db(i)*db(op%mat%ir2c(i))
          end if
       end do
-      
+      !-------------------------QQst    modify18
+      close(30)
+      close(31)
+      close(32)
+      close(33)
+      !-------------------------QQend             
    end subroutine
    
    
    subroutine deallocate_extfield(e)
-      use type_extfield
-      use type_blockmatrix, only : deallocate_blockmatrix
+      use external_field_type
+      use blockmatrix_type
       implicit none
       type(external_field), intent(inout) :: e
       
@@ -743,7 +586,7 @@ contains
    ! Return the number of possible cross-terms for a given K and parity.
    !----------------------------------------------------------------------------
    function number_crossterms(op)
-      use type_extfield
+      use external_field_type
       implicit none
       type(external_field), intent(in) :: op
       integer :: number_crossterms
@@ -767,7 +610,7 @@ contains
    ! J-value of the operator
    !----------------------------------------------------------------------------
    subroutine setup_crossterms(op, crossterms, n)
-      use type_extfield
+      use external_field_type
       implicit none
       type(external_field), intent(in) :: op
       type(external_field), dimension(:), allocatable, intent(inout) :: crossterms
@@ -784,7 +627,6 @@ contains
          return
       ! Otherwise, allocate the space and set them up
       else
-         call deallocate_crossterms(crossterms)
          allocate(crossterms(1:nxterms))
          
          ! Is the operator beta+ or beta-?
@@ -798,25 +640,25 @@ contains
          if (nxterms == 2) then
             ! OP x RS0
             ixterm = 1
-            call init_external_field(cbeta(ibeta), label='RS0', k=op%k, op=crossterms(ixterm))
+            call init_external_field(label='RS0'//cbeta(ibeta), k=op%k, op=crossterms(ixterm))
             crossterms(ixterm)%label = trim(op%label)//'x'//trim(crossterms(ixterm)%label)
             ! OP x PS0
             ixterm = 2
-            call init_external_field(cbeta(ibeta), label='PS0', k=op%k, op=crossterms(ixterm))
+            call init_external_field(label='PS0'//cbeta(ibeta), k=op%k, op=crossterms(ixterm))
             crossterms(ixterm)%label = trim(op%label)//'x'//trim(crossterms(ixterm)%label)
          ! J = 1
          else if (nxterms == 3) then
             ! OP x R
             ixterm = 1
-            call init_external_field(cbeta(ibeta), label='R', k=op%k, op=crossterms(ixterm))
+            call init_external_field(label='R'//cbeta(ibeta), k=op%k, op=crossterms(ixterm))
             crossterms(ixterm)%label = trim(op%label)//'x'//trim(crossterms(ixterm)%label)
             ! OP x RS1
             ixterm = 2
-            call init_external_field(cbeta(ibeta), label='RS1', k=op%k, op=crossterms(ixterm))
+            call init_external_field(label='RS1'//cbeta(ibeta), k=op%k, op=crossterms(ixterm))
             crossterms(ixterm)%label = trim(op%label)//'x'//trim(crossterms(ixterm)%label)
             ! OP x P
             ixterm = 3
-            call init_external_field(cbeta(ibeta), label='P', k=op%k, op=crossterms(ixterm))
+            call init_external_field(label='P'//cbeta(ibeta), k=op%k, op=crossterms(ixterm))
             crossterms(ixterm)%label = trim(op%label)//'x'//trim(crossterms(ixterm)%label)
          end if
       end if
@@ -824,243 +666,38 @@ contains
    
    
    subroutine deallocate_crossterms(crossterms)
-      use type_extfield
+      use external_field_type
       implicit none
       type(external_field), dimension(:), allocatable, intent(inout) :: crossterms
       
       integer :: i
       
       if (allocated(crossterms)) then
-         do i=1,size(crossterms)
+         do i=1,3
             call deallocate_extfield(crossterms(i))
          end do
          deallocate(crossterms)
       end if
       
    end subroutine deallocate_crossterms
-
+   
+   
    !----------------------------------------------------------------------------
-   ! TBC NUCLEAR MATTER APPROXIMATION + LDA: PRD 88, 083516 (2013), Eq. 16, A11, A12
-   ! Note: Eq. 16 has a typo, there is no 1/4m in the c3 term.
-   ! Note: Eq. A11/A12 I cannot reproduce the correct result, there might be a typo
-   ! Note: Dimensions are rho = 1/fm^3 , kf = 1/fm
+   ! Print the computed cross-terms to STDOUT 
    !----------------------------------------------------------------------------
-
-   ! P=p=0 limit, I2=I1==I0 (Klos 2013 Eq.14, Verified by Evan 4/23/21)
-   function tbc_nmlda_I0(kf) result(I0)
-      use pnfam_constants, only : pi, Mpi, hbarc
-      use hfb_solution, only : nghl
+   subroutine print_crossterms(labels)
       implicit none
-      real(dp), intent(in) :: kf
-      real(dp) :: kf3, kf2, I0
-      real(dp) :: m
-
-      m = Mpi/hbarc
-      kf2 = kf*kf
-      kf3 = kf*kf*kf
-
-      I0 = 1.0_dp - 3.0_dp*m*m/(kf2) + 3.0_dp*m*m*m/(kf3)*atan(kf/m)
-
-   end function
-
-   function tbc_nmlda_I1(kf, Q) result(I1)
-      use pnfam_constants, only : pi, Mpi, hbarc
-      use hfb_solution, only : nghl
-      implicit none
-      real(dp), intent(in) :: kf, Q
-
-      real(dp) :: kf3, kf2
-      real(dp) :: aux1, aux2, aux3, aux4, aux5, I1
-      real(dp) :: m
-
-      m = Mpi/hbarc
-      kf2 = kf*kf
-      kf3 = kf*kf*kf
-
-      aux1 = 1.0_dp/(512.0_dp*kf3*Q**3)
-      aux2 = 8*kf*Q*(48*(kf2 + m*m)**2 + 32*(kf2 - 3*m*m)*Q*Q - 3*Q**4)
-      aux3 = 768*m**3*Q**3*(atan((2*kf+Q)/(2*m)) + atan((2*kf-Q)/(2*m))) !atan(2*m*kf/(m*m + 0.25_dp*Q*Q - kf2))
-      aux4 = 3*(16*(kf2 + m*m)**2 - 8*(kf2 - 5*m*m)*Q*Q + Q**4)*(4*(kf2 + m*m) - Q*Q)
-      aux5 = log((m*m + (kf - Q*0.5_dp)**2)/(m*m + (kf + Q*0.5_dp)**2))
-      I1 = aux1*(aux2 + aux3 + aux4*aux5)
-
-   end function
-
-   function tbc_nmlda_I2(kf, Q) result(I2)
-      use pnfam_constants, only : pi, Mpi, hbarc
-      use hfb_solution, only : nghl
-      implicit none
-
-      real(dp), intent(in) :: kf, Q 
-
-      real(dp) :: kf3, kf2
-      real(dp) :: aux1, aux2, aux3, aux4, aux5, I2
-      real(dp) :: m
-
-      m = Mpi/hbarc
-      kf2 = kf*kf
-      kf3 = kf*kf*kf
-
-      aux1 = 1.0_dp/(16.0_dp*kf3*Q)
-      aux2 = 8*kf*(2*kf2 - 3*m*m)*Q
-      aux3 = 24*m**3*Q*(atan((2*kf+Q)/(2*m)) + atan((2*kf-Q)/(2*m))) !atan((2*m*kf)/(m*m + 0.25_dp*Q*Q - kf2))
-      aux4 = 3*m*m*(4*kf2 - Q*Q + 4*m*m)
-      aux5 = log((m*m + (kf - Q*0.5_dp)**2)/(m*m + (kf + Q*0.5_dp)**2))
-      I2 = aux1*(aux2 + aux3 + aux4*aux5)
-
-   end function
-
-   ! Fermi momentum from density for SNM (rho_snm = rhop+rhon)
-   function lda_kf_snm(rho) result(kf)
-      use pnfam_constants, only : pi
-      use hfb_solution, only : nghl
-      implicit none
-      real(dp), dimension(nghl), intent(in) :: rho
-      real(dp), dimension(nghl) :: kf
-
-      kf = 0
-      kf = (1.5_dp*pi*pi*rho)**(1.0_dp/3.0_dp)
-
-   end function
-
-   ! Fermi momentum from density for ASNM (twice that of SNM, rho = rhop or rhon)
-   function lda_kf_asnm(rho) result(kf)
-      use pnfam_constants, only : pi
-      use hfb_solution, only : nghl
-      implicit none
-      real(dp), dimension(nghl), intent(in) :: rho
-      real(dp), dimension(nghl) :: kf
-
-      ! Kf is twice Kf of SNM
-      kf = 0
-      kf = (3.0_dp*pi*pi*rho)**(1.0_dp/3.0_dp)
-
-   end function
-
-   ! Density dependent coeff of (sigma tau) from effective 2BC
-   function tbc_nmlda_da1(rhon, rhop, Q_per_kf, snm) result(da1)
-      use pnfam_constants, only : pi, Mpi, hbarc, Fpi, Mn, gA
-      use hfb_solution, only : nghl
-      use type_extfield_2bc, only : c3, c4, use_p
-      implicit none
-
-      real(dp), dimension(nghl), intent(in) :: rhon, rhop
-      real(dp), intent(in) :: Q_per_kf
-      logical, intent(in) :: snm
-
-      real(dp) :: caux0, caux3, caux4, ki, ri, Qi, I1, I2
-      real(dp), dimension(nghl) :: da1, rho, kf, Q
-      integer :: it, i
-
-      da1 = 0; rho = 0; kf = 0; Q = 0
-
-      ! Factor out gA (note no factor of 1/2 as in TBC module)
-      caux0 = (hbarc*hbarc*hbarc)/(Mn*Fpi*Fpi)
-      caux3 = -1.0_dp/3.0_dp*c3
-      if (use_p) then
-         caux3 = caux3 + 1.0_dp/12.0_dp
-      end if
-      caux4 =  1.0_dp/3.0_dp*(c4 + 0.25_dp)
-
-      do it=1,3
-         ! Handle loop
-         if (snm) then
-             if (it/=3) cycle
-         else
-             if (it==3) cycle
-         end if
-
-         ! Get isospin specific quantities
-         if (it==1) then
-            rho = rhon
-            kf  = lda_kf_asnm(rho)
-         else if (it==2) then
-            rho = rhop
-            kf  = lda_kf_asnm(rho)
-         else
-            rho = rhop + rhon
-            kf  = lda_kf_snm(rho)
-         end if
-
-         ! Compute contributions
-         do i=1,nghl
-            ki = kf(i)
-            ri = rho(i)
-            Qi = ki*Q_per_kf
-            if (abs(Qi) < 1e-3) then
-               I1 = tbc_nmlda_I0(ki)
-               I2 = I1
-            else
-               ! I haven't derived this yet.
-               !  1. There might be "cross terms", like (I1(kn, Qn) + I1(kn, Qp))*0.5_dp and vice versa
-               !  2. I might need the pseudo scalar terms. p=0, but P=Q/=0...
-               I1 = tbc_nmlda_I1(ki,Qi) 
-               I2 = tbc_nmlda_I2(ki,Qi)
-            end if
-            da1(i) = da1(i) + caux0*ri*(caux4*(3.0_dp*I2 - I1) + caux3*I1)
+      character(len=*), dimension(:), intent(in) :: labels
+      character(len=100) :: st
+      integer :: i
+      
+      if (size(labels) > 0) then
+         st = 'Cross-terms computed: '//trim(labels(1))
+         do i=2, size(labels)
+            st = trim(st)//', '//trim(labels(i))
          end do
-      end do
+         call writelog(st)
+      end if
+   end subroutine print_crossterms
 
-   end function
-
-   function dme_u00(kf) result(u00)
-      use hfb_solution, only : nghl
-      use pnfam_constants, only : hbarc, Mpi
-      implicit none
-      real(dp), dimension(nghl), intent(in) :: kf
-      real(dp), dimension(nghl) :: u00
-      real(dp) :: m
-
-      m = Mpi/hbarc
-      u00 = 1.5_dp/(kf*kf)*(1 - m/kf*atan(2*kf/m) + m*m/(4.0_dp*kf*kf)*log(1 + 4*kf*kf/(m*m)))
-
-   end function
-
-   function dme_u22(kf) result(u22)
-      use hfb_solution, only : nghl
-      use pnfam_constants, only : hbarc, Mpi
-      implicit none
-      real(dp), dimension(nghl), intent(in) :: kf
-      real(dp), dimension(nghl) :: u22
-      real(dp) :: m
-
-      m = Mpi/hbarc
-      u22 = 3.0_dp*kf*kf/(8.0_dp*m*m*(4.0_dp*kf*kf+m*m))*(48.0_dp + 20.0_dp*m*m/(kf*kf) &
-            + m*(4.0_dp*kf*kf + m*m)/(kf*kf*kf)*(m/kf*log(m*m/(4.0_dp*kf*kf + m*m)) - 8.0_dp*atan(2*kf/m)))
-
-   end function
-
-   function dme_exc() result(rf)
-      use hfb_solution, only : nghl
-      use hfb_solution, only : hfb_density_coord, d2rho, tau
-      use type_extfield_2bc, only : caux, d1,d2,c3,c4
-      use pnfam_constants, only : Mpi, hbarc, IT_ISOSCALAR, IT_PROTON, IT_NEUTRON
-      implicit none
-      real(dp), dimension(nghl) :: rho, kf, u22, u00, rf1, rf2, rf, d2r0, tau0
-      real(dp) :: m, ca, ch, cc
-
-      ! Constants
-      m = Mpi/hbarc
-      ca = 2*caux
-      ch = 1._dp/3._dp*(2*c4 - c3 + 0.5_dp)
-      cc = -d1 + 2*d2
-
-      ! Densities
-      call hfb_density_coord(IT_ISOSCALAR, rho)
-      d2r0 = d2rho(:,IT_NEUTRON)+d2rho(:,IT_PROTON)
-      tau0 = tau(:,IT_NEUTRON)+tau(:,IT_PROTON)
-
-      ! DME integrals
-      kf = lda_kf_snm(rho) ! 1/fm
-      u00 = dme_u00(kf) ! fm^2
-      u22 = dme_u22(kf) ! fm^2
-
-      ! Full expression
-      rf1 = ca*(ch*(1 - m*m*u00 - m*m*u22*0.1_dp) + cc)*rho
-      rf2 = ca*ch*m*m/(6*kf*kf)*u22*(0.25_dp*d2r0 - tau0)
-      rf = rf1 - rf2
-
-   end function
-
-
-end module pnfam_extfield
+end module extfield
