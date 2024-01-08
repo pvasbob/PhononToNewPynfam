@@ -33,6 +33,8 @@ contains
       use pnfam_broyden
       use pnfam_txtoutput
       use pnfam_storage, only : fam_io
+
+
       implicit none
       integer :: iexit=1, ierr=0
 
@@ -93,6 +95,14 @@ contains
    subroutine ifam
       use pnfam_constants, only : iu, pi, get_timer
       use pnfam_broyden
+
+!-----------------
+! qqphonon
+!-----------------
+      use pnfam_WX
+
+
+
       implicit none
 
       ! Finite temperature

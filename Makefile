@@ -34,8 +34,8 @@ COMPILE_DIR = $(shell pwd)
 #==============================================================================#
 #                           Compile-Time Options                               #
 #==============================================================================#
-COMPILER_TYPE = IFORT
-COMPILER = ifort
+COMPILER_TYPE = GFORTRAN
+COMPILER = gfortran
 
 VERBOSE   = 0
 DEBUG     = FALSE
@@ -263,7 +263,7 @@ $(PNFAM_STORAGE_OBJ)     : $(PNFAM_CONSTANTS_OBJ) $(PNFAM_SETUP_OBJ) $(PNFAM_INT
 $(PNFAM_SOLVER_OBJ)      : $(PNFAM_LOGGER_OBJ) $(PNFAM_CONSTANTS_OBJ) $(PNFAM_SETUP_OBJ) \
                                $(TYPE_BBM_OBJ) $(PNFAM_BROYDEN_OBJ) $(PNFAM_TXTOUTPUT_OBJ) \
                                $(TYPE_EXTFIELD_OBJ) $(PNFAM_EXTFIELD_OBJ) $(PNFAM_STORAGE_OBJ) \
-                               $(TYPE_GAMDEL_2BC_OBJ)
+                               $(TYPE_GAMDEL_2BC_OBJ) $(PNFAM_WX_OBJ)
 $(CONTOUR_SETUP_OBJ)     : $(PNFAM_LOGGER_OBJ) $(PNFAM_SETUP_OBJ) $(PNFAM_TXTOUTPUT_OBJ)
 
 
