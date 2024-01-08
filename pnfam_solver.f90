@@ -96,10 +96,11 @@ contains
       use pnfam_constants, only : iu, pi, get_timer
       use pnfam_broyden
 
-!-----------------
-! qqphonon
-!-----------------
+     !---------------------------QQst
+     ! qqphonon
+     !-----------------
       use pnfam_WX
+     !---------------------------Qend
 
 
 
@@ -110,8 +111,226 @@ contains
       complex(dp) :: ft_cmplx_factor
 
       integer :: iter, ixterm
+
+
       real(dp) :: re_s, im_s
       real(dp) :: time1, time2, timei, timei0
+
+
+      !--------------------------------------------QQst
+      ! variable for assigning X,Y to matX and matY
+      !---------------------------------------
+     !integer, parameter :: dp = kind(1.0d0)
+      integer, parameter :: dc = kind(cmplx(1.0,1.0,kind=dp))
+      integer, allocatable :: Ph_readin_select(:,:)
+      integer, allocatable :: U_select(:,:),V_select(:,:)
+      integer, allocatable :: X_select(:,:),Y_select(:,:)
+      integer, allocatable :: Ph_db(:)
+      integer :: Ph_nb, Ph_NumberofX
+      integer :: Ph_sum_db
+      integer, allocatable :: Ph_sum_db_colm1(:)          !!!Q: dimension is iHFB_NB, record sum of nd of first column minus 1 blocks.
+      Complex(dc), allocatable  :: Ph_matX(:,:),Ph_matY(:,:)
+      Complex(dc), allocatable  :: Ph_X(:), Ph_Y(:)       !!!Q: maybe not necessary.
+      !---------------------------------------
+      ! variable for assigning matN11 and matP11
+      !---------------------------------------
+      !
+      integer, allocatable :: WX_readin_select(:,:)
+      integer, allocatable :: WX_id(:)
+      integer :: WX_iHFB_NB, WX_NumberofPH11,WX_NumberofPH11_maxval
+      integer :: WX_sum_nd
+      integer, allocatable :: WX_sum_nd_colm1(:)          !!!Q: dimension is iHFB_NB, record sum of nd of first column minus 1 blocks.
+      real(dp) :: WX_realomega 
+      real(dp) :: W_omega 
+      !---------------------------------------
+      Complex(Kind(1.000D0)), allocatable  :: WX_NH11_E101(:),WX_PH11_E101(:)
+      Complex(Kind(1.000D0)), allocatable  :: WX_BNH11_E101(:),WX_BPH11_E101(:)  !!!Q: bmod01
+      !
+      Complex(Kind(1.000D0)), allocatable  :: WX_matN11_E101(:,:),WX_matP11_E101(:,:)
+      Complex(Kind(1.000D0)), allocatable  :: WX_matBN11_E101(:,:),WX_matBP11_E101(:,:)  !!!Q: bmod01
+      !
+      Complex, allocatable  :: WX_matpnbasisN11_E101(:,:),WX_matpnbasisP11_E101(:,:) !!!Q:bmod01    
+     !real(dp), allocatable  :: WX_matpnbasisN11_E101(:,:),WX_matpnbasisP11_E101(:,:)
+      integer, allocatable :: WX_pnbasis_select(:,:)   !modifyX01
+      !---------------------------------------
+ 
+      ! variable used by both matX, matY and matN11, matP11
+      !---------------------------------------
+      integer :: sum_block
+      integer :: qqj, qqi,qqk, ct1, ct2, ct3      !!!Q: ct means count, for any
+      integer :: inbcc                        !!!Q: inside block column count, used to decide which column to be assigned.
+      integer :: inbrc                        !!!Q: inside block row count, used to decide whcih row element to be assigned.
+      integer :: inbrr                        !!!Q: used to record how many elements already assigned to a row inside a block.
+      logical :: Ph_test=.True.               !!!Q: logical to open or close phonon calculation.
+      complex,parameter :: cunit=cmplx(0.0_dp,1.0_dp,kind=dp)
+      complex,parameter :: runit=cmplx(1.0_dp,0.0_dp,kind=dp)
+      integer :: nph, nph_rec   !!! number of phonons 
+
+     !Complex(Kind(1.000D0)), allocatable  :: WX_NH11_store(:,:),WX_PH11_store(:,:)
+     !Complex(Kind(1.000D0)), allocatable  :: WX_BNH11_store(:,:),WX_BPH11_store(:,:)  !!!Q: bmod01
+      real(dp), allocatable :: WX_realomega_store(:) 
+      integer, allocatable :: WX_iHFB_NB_store(:), WX_NumberofPH11_store(:)
+      integer, allocatable :: WX_id_store(:,:)
+      integer, allocatable :: WX_readin_select_store(:,:,:)
+      integer, allocatable :: iso_store(:), L_store(:), k_store(:)
+
+
+
+      Complex(Kind(1.000D0)), allocatable  :: WX_NH11_store1D(:)
+      Complex(Kind(1.000D0)), allocatable  :: WX_BNH11_store1D(:)
+      Complex(Kind(1.000D0)), allocatable  :: WX_PH11_store1D(:)
+      Complex(Kind(1.000D0)), allocatable  :: WX_BPH11_store1D(:)
+
+
+      !---------------------------------------------
+      ! matrix PX, PPX,  
+      !---------------------------------------------
+      !interm variable matrix, used for both WX and WY
+   !  Complex(Kind(1.000D0)), allocatable  :: Ph_matPdF(:,:),Ph_matPdFg(:,:), Ph_matFNc(:,:),Ph_matFNcg(:,:)
+      ! matrix distinguished.
+      !---------------------------------------------
+   !  Complex(Kind(1.000D0)), allocatable  :: Ph_matPPdXg(:,:), Ph_matXNcgN(:,:), Ph_matPXNcg(:,:), Ph_matPdXgN(:,:)
+   !  Complex(Kind(1.000D0)), allocatable  :: Ph_matPPdYg(:,:), Ph_matYNcgN(:,:), Ph_matPYNcg(:,:), Ph_matPdYgN(:,:)
+   !  Complex(Kind(1.000D0)), allocatable  :: Ph_matWX(:,:), Ph_matWY(:,:)             !modify32
+      !---------------------------------------------
+      real, allocatable :: Ph_ReWX(:),Ph_ImWX(:)  
+      real, allocatable :: Ph_ReWY(:),Ph_ImWY(:)  
+      !---------------------------------------------
+      Complex, allocatable  :: WgreenX(:), WgreenY(:)                                             
+      !---------------------------------------------
+ 
+      real :: Ph_mult=1.0
+      real :: Delta = +0.1
+      !-------------------------QQst    modify30
+      real :: si_mini=100.0
+      integer :: iter_start, iter_end
+      integer, parameter :: iter_endmax = 100
+      !-------------------------QQend   modify30
+      complex, dimension(1) :: cstr_mini
+      !--------------------------
+      integer :: which_iso
+      integer :: which_L
+      integer :: which_k
+      integer :: which_ph
+      character(len=10)  :: iso_id
+      character(len=10)  :: L_id
+      character(len=10)  :: k_id
+      character(len=10)  :: ph_id
+      logical :: file_exists
+     
+      open(48,file='Ph_converge',access='append')    ! modify18
+     !open(49,file='Ph_from_simplex_to_pnfam_dH11')
+      open(50,file='50_checke')    ! modify18
+     !
+      !--------------------------------------------QQend
+
+      !---------------------------------------------------------------QQst  modify20
+      ! allocate for Phonon calculation.
+      !---------------------
+      if(Ph_test) then			!!!Q: prepare before iter loop
+          !--------------------------------
+	  !--------------------------------
+	  ! readin binfo from exterfield, assign array X and Y to matX and matY
+	  !--------------------------------
+	  open(300,file='Ph_binary_output_extfield_GT0',status='unknown',form='unformatted')
+	  Read(300) Ph_nb
+	  Read(300) Ph_NumberofX                    !!!Q: read
+	  !
+	  if(allocated(Ph_db)) deallocate(Ph_sum_db_colm1,Ph_db)
+	  Allocate(Ph_sum_db_colm1(Ph_nb),Ph_db(Ph_nb))
+	  ! 
+	  Read(300) Ph_db                 !!!Q: pnfam_solver.f90 does't have db(:)
+	  Read(300) Ph_sum_db
+	  Read(300) Ph_sum_db_colm1
+	  !
+	  !
+	  if(allocated(Ph_readin_select)) deallocate(Ph_readin_select)
+	  Allocate(Ph_readin_select(Ph_nb,Ph_nb))
+	  !
+	  Read(300) Ph_readin_select                   !!!Q: read
+	  close(300)
+
+	  Allocate(U_select(Ph_nb,Ph_nb), V_select(Ph_nb,Ph_nb), &
+                   X_select(Ph_nb,Ph_nb), Y_select(Ph_nb,Ph_nb))
+
+         U_select = 0
+         V_select = 0
+         X_select = 0
+         Y_select = 0
+         do qqi = 1, Ph_nb  
+             do qqj = 1, Ph_nb
+                 if(qqi.eq.(qqj-Ph_nb/2)) then
+                     V_select(qqi,qqj) = 1
+                 end if
+                 if((qqi-Ph_nb/2).eq.qqj) then
+                     V_select(qqi,qqj) = 1
+                 end if
+             end do 
+         end do
+         !
+         X_select= matmul(Ph_readin_select, V_select)
+         Y_select= matmul(V_select, Ph_readin_select)
+         open(20,file='X_select')
+         do qqi = 1, Ph_nb
+            do qqj = 1, Ph_nb
+              write(20,*)qqi, qqj, U_select(qqi,qqj), V_select(qqi,qqj), &
+                        X_select(qqi,qqj)
+            end do
+         end do
+         close(20)
+
+
+          !-----------------------
+          ! Wgreens         
+          !----------------------
+	  if(allocated(WgreenX)) deallocate(WgreenX, WgreenY)
+	  Allocate(WgreenX(Ph_sum_db**2), WgreenY(Ph_sum_db**2))
+          WgreenX = 0
+          WgreenY = 0
+	  !
+         !Call WgreenX_func(Ph_sum_db, Ep, En, omega, WX_realomega, width, WgreenX) 
+         !Call WgreenY_func(Ph_sum_db, Ep, En, omega, WX_realomega, width, WgreenY) 
+          !
+          Allocate(Ph_ReWX(Ph_NumberofX), Ph_ImWX(Ph_NumberofX))
+          Ph_ReWX=0
+          Ph_ImWX=0
+ 
+          Allocate(Ph_ReWY(Ph_NumberofX), Ph_ImWY(Ph_NumberofX))
+          Ph_ReWY=0
+          Ph_ImWY=0
+ 
+	  !----------------------------
+	  ! preserve below to check
+	  !----------------------------
+	 !sum_block=0
+	 !do qqj=1,Ph_nb
+	 !   do qqi=1,Ph_nb
+	!if(Ph_readin_select(qqj,qqi)==1) then 
+	!   sum_block=sum_block+Ph_db(qqj)*Ph_db(qqi)             !!!Q: number of elements sum block 
+	!  !write(34,*) qqj, qqi, Ph_db(qqj), Ph_db(qqi), sum_block
+	!end if
+	!    end do
+	! end do
+          !
+          !-----------------------------
+          ! allocate Ph_matX and Ph_matY 
+          !-----------------------------
+          Allocate(Ph_matX(Ph_sum_db,Ph_sum_db),Ph_matY(Ph_sum_db,Ph_sum_db))
+          Ph_matX=0
+          Ph_matY=0
+
+
+
+         nph = 0
+         !=================================================
+        ! 
+      end if			!!!Q: preparation before iter loop end.
+    !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! end preparation
+    !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
+
+
       time1=0; time2=0; timei=0; timei0=0
 
       ! Iteration header
