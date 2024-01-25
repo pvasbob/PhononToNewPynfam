@@ -34,8 +34,8 @@ COMPILE_DIR = $(shell pwd)
 #==============================================================================#
 #                           Compile-Time Options                               #
 #==============================================================================#
-COMPILER_TYPE = GFORTRAN
-COMPILER = gfortran
+COMPILER_TYPE = IFORT
+COMPILER = ifort
 
 VERBOSE   = 0
 DEBUG     = FALSE

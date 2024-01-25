@@ -11,6 +11,13 @@ module pnfam_solver
    use type_bigblockmatrix
 
    implicit none
+
+   !----------------------------------QQst      modify18
+   character(100), public,  parameter :: qq_io_path = "/21dayscratch/scr/q/u/qunqun/pn_io_1/"
+   !----------------------------------QQend     modify18
+
+
+
    integer, parameter, private :: dp = kind(1d0)
 
    logical, private :: use_diagonal_blocks, bminus
@@ -323,6 +330,235 @@ contains
 
          nph = 0
          !=================================================
+
+         !=================================================
+         ! find out how many phonons, and allocate storage memory.
+         !=================================================
+        do which_iso=  0,1
+           write(iso_id,'(i0)') which_iso
+             do which_L = 0,7
+               write(L_id,'(i0)') which_L
+               do which_k = 0, which_L
+                 do which_ph = 1,15
+                   write(k_id,'(i0)') which_k
+                   write(ph_id,'(i0)') which_ph
+                   !if(which_k.eq.0) then
+                   !   Ph_mult = 1                   !!!Q: apply for deformed nuclear.          
+                   !else
+                   !   Ph_mult = 2  
+                   !end if
+                 
+                
+
+	  inquire(file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),exist=file_exists)    !modify18
+      if(file_exists) then
+         nph = nph + 1
+      endif
+    
+                 end do
+               end do
+             end do
+        end do
+
+        nph_rec = nph
+
+        write(50, *) 'nph:', nph
+
+
+	  if(allocated(WX_realomega_store)) deallocate(WX_realomega_store, WX_iHFB_NB_store, WX_NumberofPH11_store)
+	  allocate(WX_realomega_store(nph), WX_iHFB_NB_store(nph), WX_NumberofPH11_store(nph))
+      if(allocated(iso_store)) deallocate(iso_store, L_store, k_store)
+      allocate(iso_store(nph), L_store(nph), k_store(nph))
+
+    !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        nph = 0
+        do which_iso=  0,1
+        write(iso_id,'(i0)') which_iso
+        do which_L = 0,7
+        write(L_id,'(i0)') which_L
+        do which_k = 0, which_L
+           do which_ph = 1,15
+              write(k_id,'(i0)') which_k
+              write(ph_id,'(i0)') which_ph
+                if(which_k.eq.0) then
+                   Ph_mult = 1                   !!!Q: apply for deformed nuclear.          
+                else
+                   Ph_mult = 2  
+                end if
+                
+
+	  inquire(file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),exist=file_exists)    !modify18
+      if(file_exists) then
+      nph = nph  + 1
+	  open(110,file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),status='unknown',form='unformatted')       !modify18
+          Read(110) WX_realomega
+	  Read(110) WX_iHFB_NB                         !!!Q: read
+
+
+	  if(allocated(WX_id)) deallocate(WX_id, WX_sum_nd_colm1)
+	  allocate(WX_id(WX_iHFB_NB), WX_sum_nd_colm1(WX_iHFB_NB))
+
+          if(allocated(WX_readin_select))  deallocate(WX_readin_select)
+	  Allocate(WX_readin_select(WX_iHFB_NB,WX_iHFB_NB))
+
+
+	  Read(110) WX_NumberofPH11                    !!!Q: read
+	  Read(110) WX_id                              !!!Q: read
+	  Read(110) WX_readin_select                   !!!Q: read
+	  !
+	  close(110)
+ 
+      WX_realomega_store(nph) = WX_realomega
+      WX_iHFB_NB_store(nph) = WX_iHFB_NB
+      WX_NumberofPH11_store(nph) = WX_NumberofPH11
+ 
+      iso_store(nph) =  which_iso
+      L_store(nph) =  which_L 
+      k_store(nph) =  which_k 
+
+      end if    ! file_exists
+         end do ! which_ph
+         end do ! which_k
+         end do ! which_L
+         end do ! which_iso
+
+    WX_NumberofPH11_maxval = maxval(WX_NumberofPH11_store)
+    write(50,*) 'WX_realomega_store' ,WX_realomega_store
+    write(50,*) 'WX_iHFB_NB_store' ,WX_iHFB_NB_store 
+    write(50,*) 'WX_NumberofPH11_store',WX_NumberofPH11_store
+    write(50,*) 'WX_NumberofPH11_maxval',WX_NumberofPH11_maxval
+
+
+	  if(allocated(WX_id_store)) deallocate(WX_id_store, WX_readin_select_store)
+	  allocate(WX_id_store(nph, WX_iHFB_NB_store(1)), WX_readin_select_store(nph, WX_iHFB_NB_store(1),WX_iHFB_NB_store(1)))
+
+
+	 !if(allocated(WX_NH11_store)) deallocate(WX_NH11_store, WX_BNH11_store, WX_PH11_store, WX_BPH11_store)
+	 !allocate(WX_NH11_store(nph, WX_NumberofPH11_maxval), WX_BNH11_store(nph, WX_NumberofPH11_maxval), & 
+     !          WX_PH11_store(nph, WX_NumberofPH11_maxval), WX_BPH11_store(nph, WX_NumberofPH11_maxval))
+
+      if(allocated(WX_NH11_store1D)) deallocate(WX_NH11_store1D,WX_BNH11_store1D,WX_PH11_store1D,WX_BPH11_store1D)
+      allocate(WX_NH11_store1D(nph*WX_NumberofPH11_maxval))
+     !allocate(WX_BNH11_store1D(nph*WX_NumberofPH11_maxval))
+      allocate(WX_PH11_store1D(nph*WX_NumberofPH11_maxval))
+     !allocate(WX_BPH11_store1D(nph*WX_NumberofPH11_maxval))
+
+    !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! loop phonon binfo once more to populate WX_id_store,
+    ! WX_readin_select_store,  WX_?H11_store
+    !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        nph = 0
+        do which_iso=  0,1
+        write(iso_id,'(i0)') which_iso
+        do which_L = 0,7
+        write(L_id,'(i0)') which_L
+        do which_k = 0, which_L
+           do which_ph = 1,15
+              write(k_id,'(i0)') which_k
+              write(ph_id,'(i0)') which_ph
+                if(which_k.eq.0) then
+                   Ph_mult = 1                   !!!Q: apply for deformed nuclear.          
+                else
+                   Ph_mult = 2  
+                end if
+                
+
+	  inquire(file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),exist=file_exists)    !modify18
+      if(file_exists) then
+
+      nph = nph + 1
+
+	  open(110,file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),status='unknown',form='unformatted')       !modify18
+          Read(110) WX_realomega
+	      Read(110) WX_iHFB_NB                         !!!Q: read
+
+
+	      if(allocated(WX_id)) deallocate(WX_id, WX_sum_nd_colm1)
+	      allocate(WX_id(WX_iHFB_NB), WX_sum_nd_colm1(WX_iHFB_NB))
+
+          if(allocated(WX_readin_select))  deallocate(WX_readin_select)
+	  Allocate(WX_readin_select(WX_iHFB_NB,WX_iHFB_NB))
+
+
+	  Read(110) WX_NumberofPH11                    !!!Q: read
+	  Read(110) WX_id                              !!!Q: read
+	  Read(110) WX_readin_select                   !!!Q: read
+	  !
+	  close(110)
+
+
+
+
+
+
+          if(allocated(WX_NH11_E101)) deallocate(WX_NH11_E101, & 
+                                                 WX_PH11_E101)
+	  Allocate(WX_NH11_E101(WX_NumberofPH11),WX_PH11_E101(WX_NumberofPH11))
+	  WX_NH11_E101=0
+	  WX_PH11_E101=0
+
+          !--------------------------------------------------
+    !     if(allocated(WX_BNH11_E101)) deallocate(WX_BNH11_E101, & 
+    !                                            WX_BPH11_E101)
+	! Allocate(WX_BNH11_E101(WX_NumberofPH11),WX_BPH11_E101(WX_NumberofPH11))
+	! WX_BNH11_E101=0
+	! WX_BPH11_E101=0
+          !--------------------------------------------------
+
+          !----------------------------------------E101
+          ! 
+	  open(201,file=trim(adjustl(qq_io_path))//'QQ_binary_NH11_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),& 
+                                                                status='unknown',form='unformatted')        !modify18
+	  Read(201) WX_NH11_E101
+	! Read(201) WX_BNH11_E101
+	  close(201)
+	  !
+	  !
+	  open(201,file=trim(adjustl(qq_io_path))//'QQ_binary_PH11_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),&
+                                                                status='unknown',form='unformatted')        !modify18
+	  Read(201) WX_PH11_E101
+	! Read(201) WX_BPH11_E101
+	  close(201)
+          ! 
+
+     WX_id_store(nph,:) = WX_id
+     WX_readin_select_store(nph,:,:) = WX_readin_select
+!
+    do qqi = 1, size(WX_NH11_E101)
+     ! WX_NH11_store(nph, qqi) = WX_NH11_E101 (qqi)
+     ! WX_BNH11_store(nph,qqi) = WX_BNH11_E101(qqi)  
+     ! WX_PH11_store(nph, qqi) = WX_PH11_E101(qqi)
+     ! WX_BPH11_store(nph,qqi) = WX_BPH11_E101(qqi)
+
+
+       WX_NH11_store1D((nph-1)*WX_NumberofPH11_maxval + qqi) = WX_NH11_E101(qqi)
+     ! WX_BNH11_store1D((nph-1)*WX_NumberofPH11_maxval + qqi) = WX_BNH11_E101(qqi)
+       WX_PH11_store1D((nph-1)*WX_NumberofPH11_maxval + qqi) = WX_PH11_E101(qqi)
+     ! WX_BPH11_store1D((nph-1)*WX_NumberofPH11_maxval + qqi) = WX_BPH11_E101(qqi)
+    enddo
+!
+    
+
+
+      end if    ! file_exists
+         end do ! which_ph
+         end do ! which_k
+         end do ! which_L
+         end do ! which_iso
+
+
+   !do qqi = 1, size(WX_NH11_E101)
+   !  if(WX_NH11_store(nph, qqi).Ne. WX_NH11_E101(qqi) .and. &  
+   !    WX_NH11_store(nph, qqi).Ne. WX_NH11_E101(qqi) .and.&
+   !    WX_NH11_store(nph, qqi).Ne. WX_NH11_E101(qqi) .and.& 
+   !    WX_NH11_store(nph, qqi).Ne. WX_NH11_E101(qqi))  then 
+   !      write(50,*) 'Wrong element assignment in WX_NH11_store(nph))'
+   !  endif
+   !enddo
+   !write(50,*) 'WX_NH11_store(nph) has same element as WX_NH11_E101'
+    !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 
         ! 
       end if			!!!Q: preparation before iter loop end.
     !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -399,6 +635,313 @@ contains
             call scalar_mult_bbm(dHqp_im,quench_residual_int)
 
          end if ! End computation of the residual interaction
+
+
+         !------------------------------------------QQst        modify21
+         ! assign array X and Y to Ph_matX and Ph_matY to construct product 
+         !----------------------------
+        if(Ph_test) then
+
+          !--------------------------------
+          ! readin binfo, N11 and P11 from lpfam
+          !--------------------------------
+	  !
+        do nph = 1, nph_rec
+           if(k_store(nph) .eq. 0) then 
+              Ph_mult = 1
+           else
+              Ph_mult = 1
+           end if
+     !   do which_iso=  0,1
+     !   write(iso_id,'(i0)') which_iso
+     !   do which_L = 0,7
+     !   write(L_id,'(i0)') which_L
+     !   do which_k = 0, which_L
+     !      do which_ph = 1,15
+     !         write(k_id,'(i0)') which_k
+     !         write(ph_id,'(i0)') which_ph
+     !           if(which_k.eq.0) then
+     !              Ph_mult = 1                   !!!Q: apply for deformed nuclear.          
+     !           else
+     !              Ph_mult = 2  
+     !           end if
+     !           
+!
+	  !inquire(file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),exist=file_exists)    !modify18
+     ! if(file_exists) then
+     ! 
+     ! nph = nph + 1
+    
+	 !open(110,file=trim(adjustl(qq_io_path))//'QQ_binary_output_binfo_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),status='unknown',form='unformatted')       !modify18
+     !    Read(110) WX_realomega
+	 !Read(110) WX_iHFB_NB                         !!!Q: read
+
+
+	  if(allocated(WX_sum_nd_colm1)) deallocate(WX_sum_nd_colm1)
+	  allocate(WX_sum_nd_colm1(WX_iHFB_NB))
+
+     !    if(allocated(WX_readin_select))  deallocate(WX_readin_select)
+	 !Allocate(WX_readin_select(WX_iHFB_NB,WX_iHFB_NB))
+
+
+	 !Read(110) WX_NumberofPH11                    !!!Q: read
+	 !Read(110) WX_id                              !!!Q: read
+	 !Read(110) WX_readin_select                   !!!Q: read
+	  !
+	 !close(110)
+
+     W_omega = 1.0
+     if(WX_realomega_store(nph) .lt.0.5) then
+          write(50,*) iter, 'TLK: ', iso_store(nph), L_store(nph), k_store(nph), 'cycle', WX_realomega_store(nph)
+          cycle
+     end if
+ 
+
+
+         !open(600,file='600_Ph_db_WX_id')
+         !write(600, *) Ph_db
+         !write(600, *) WX_id_store(nph,:)
+         !close(600)
+!-------------------------------------------------------------------
+          if(allocated(WX_pnbasis_select)) deallocate(WX_pnbasis_select)
+          Allocate(WX_pnbasis_select(2*WX_iHFB_NB, 2*WX_iHFB_NB))
+          !
+	  WX_sum_nd=0
+	  WX_sum_nd_colm1=0
+	  do qqj=1,WX_iHFB_NB
+	      WX_sum_nd=WX_sum_nd + WX_id_store(nph, qqj)
+	      WX_sum_nd_colm1(qqj)=WX_sum_nd - WX_id_store(nph, qqj)
+	  end do
+	  ! 
+	  !
+          if(allocated(WX_matN11_E101)) deallocate(WX_matN11_E101, &
+                                        WX_matP11_E101)
+	  Allocate(WX_matN11_E101(WX_sum_nd,WX_sum_nd),WX_matP11_E101(WX_sum_nd,WX_sum_nd))
+	  WX_matN11_E101=0
+	  WX_matP11_E101=0
+          !
+          ! 
+          !-----------------------------------------------------------
+          if(allocated(WX_matBN11_E101)) deallocate(WX_matBN11_E101, &
+                                        WX_matBP11_E101)
+	  Allocate(WX_matBN11_E101(WX_sum_nd,WX_sum_nd),WX_matBP11_E101(WX_sum_nd,WX_sum_nd))
+	  WX_matBN11_E101=0
+	  WX_matBP11_E101=0
+          !-----------------------------------------------------------
+          !
+          !
+          if(allocated(WX_matpnbasisN11_E101)) deallocate(WX_matpnbasisN11_E101,&
+                                                WX_matpnbasisP11_E101) 
+	  Allocate(WX_matpnbasisN11_E101(2*WX_sum_nd,2*WX_sum_nd),WX_matpnbasisP11_E101(2*WX_sum_nd,2*WX_sum_nd))
+	  WX_matpnbasisN11_E101=0
+	  WX_matpnbasisP11_E101=0
+
+
+!---------------------------------------------------------------------------------
+
+
+
+          write(50,*) iter, trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)), & 
+                 Ph_sum_db, 2*WX_sum_nd, Ph_mult, WX_realomega_store(nph) 
+
+     !    if(allocated(WX_NH11_E101)) deallocate(WX_NH11_E101, & 
+     !                                           WX_PH11_E101)
+	 !Allocate(WX_NH11_E101(WX_NumberofPH11),WX_PH11_E101(WX_NumberofPH11))
+	 !WX_NH11_E101=0
+	 !WX_PH11_E101=0
+
+     !    !--------------------------------------------------
+     !    if(allocated(WX_BNH11_E101)) deallocate(WX_BNH11_E101, & 
+     !                                           WX_BPH11_E101)
+	 !Allocate(WX_BNH11_E101(WX_NumberofPH11),WX_BPH11_E101(WX_NumberofPH11))
+	 !WX_BNH11_E101=0
+	 !WX_BPH11_E101=0
+     !    !--------------------------------------------------
+
+
+         !Call WgreenX_func(Ph_sum_db, Ep, En, omega, WX_realomega_store(nph), width, WgreenX) 
+          Call WgreenX_func(Ph_sum_db, Ep, En, real_eqrpa, WX_realomega_store(nph), imag_eqrpa, WgreenX) 
+         !Call WgreenY_func(Ph_sum_db, Ep, En, omega, WX_realomega_store(nph), width, WgreenY) 
+          Call WgreenY_func(Ph_sum_db, Ep, En, real_eqrpa, WX_realomega_store(nph), imag_eqrpa, WgreenY) 
+ 
+          do qqi = 1, 2*WX_iHFB_NB
+             do qqj = 1, 2*WX_iHFB_NB
+                if ((qqi.le.WX_iHFB_NB).and.(qqj.le.WX_iHFB_NB)) then
+                        WX_pnbasis_select(qqi, qqj) = WX_readin_select_store(nph, qqi, qqj)
+                end if
+                !
+                if ((qqi.le.WX_iHFB_NB).and.(qqj.gt.WX_iHFB_NB)) then
+                        WX_pnbasis_select(qqi, qqj) = WX_readin_select_store(nph, qqi, qqj-WX_iHFB_NB)
+                end if
+                !
+                if ((qqi.gt.WX_iHFB_NB).and.(qqj.le.WX_iHFB_NB)) then
+                        WX_pnbasis_select(qqi, qqj) = WX_readin_select_store(nph, qqi-WX_iHFB_NB, qqj)
+                end if
+                !
+                if ((qqi.gt.WX_iHFB_NB).and.(qqj.gt.WX_iHFB_NB)) then
+                        WX_pnbasis_select(qqi, qqj) = WX_readin_select_store(nph, qqi-WX_iHFB_NB, qqj-WX_iHFB_NB)
+                end if
+             end do
+          end do
+ 
+
+
+          !----------------------------------------E101
+          ! 
+	  !open(201,file=trim(adjustl(qq_io_path))//'QQ_binary_NH11_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),& 
+     !                                                           status='unknown',form='unformatted')        !modify18
+	  !Read(201) WX_NH11_E101
+	  !Read(201) WX_BNH11_E101
+	  !close(201)
+	  !!
+	  !!
+	  !open(201,file=trim(adjustl(qq_io_path))//'QQ_binary_PH11_'//trim(adjustl(iso_id))//trim(adjustl(L_id))//trim(adjustl(k_id))//trim(adjustl(ph_id)),&
+     !                                                           status='unknown',form='unformatted')        !modify18
+	  !Read(201) WX_PH11_E101
+	  !Read(201) WX_BPH11_E101
+	  !close(201)
+          ! 
+	  !-------------------------
+	  ! asssign NH11 to matN11
+	  ! asssign NP11 to matP11
+	  !-------------------------
+	  !
+	  ct1=1
+	  ct3=0
+	  inbcc=0
+	  inbrc=0
+	  inbrr=0
+	  do qqj=1,WX_iHFB_NB
+	     do qqi=1,WX_iHFB_NB
+		if(WX_readin_select_store(nph, qqi,qqj)==1)  then
+		   inbcc=WX_sum_nd_colm1(qqj)+1
+		   inbrc=WX_sum_nd_colm1(qqi)
+		   ct3=ct3+WX_id_store(nph, qqj)*WX_id_store(nph, qqi)
+		   do ct2=ct1, ct3 
+		      inbrc=inbrc+1
+		      inbrr=inbrr+1
+                      !----------------------------E101
+		      WX_matN11_E101(inbrc, inbcc)=WX_NH11_store1D((nph-1)*WX_NumberofPH11_maxval+ct2)              
+		     !WX_matBN11_E101(inbrc, inbcc)=WX_BNH11_store1D((nph-1)*WX_NumberofPH11_maxval+ct2)              
+                      !
+		      WX_matP11_E101(inbrc, inbcc)=WX_PH11_store1D((nph-1)*WX_NumberofPH11_maxval+ct2)              
+		     !WX_matBP11_E101(inbrc, inbcc)=WX_BPH11_store1D((nph-1)*WX_NumberofPH11_maxval+ct2)              
+                      !
+		      if(inbrr.eq. WX_id_store(nph, qqi)) then
+			 inbcc=inbcc+1        !!!Q: col increase by 1
+			 inbrc=WX_sum_nd_colm1(qqi)   !!!Q: reset inbrc   
+			 inbrr=0              !!!Q: reset inbrr
+		      end if
+		   end do
+		   ct1=ct1+WX_id_store(nph, qqj)*WX_id_store(nph, qqi)
+		end if
+	     end do
+	  end do
+          !
+          !----------------------------------------------------------
+	
+
+          !-----------------------------------QQst      modify22
+          do qqj = 1, Ph_sum_db   
+             do qqi = 1, Ph_sum_db
+                ! (row positive Omega, col positive Omega)
+                if((qqi.Le.WX_sum_nd) .and.(qqj.Le.WX_sum_nd)) then 
+                        !-----------------------------E101
+                        WX_matpnbasisN11_E101(qqi,qqj) = &
+                             !0.5*(WX_matN11_E101(qqi,qqj)+WX_matBN11_E101(qqi,qqj))
+                              real(WX_matN11_E101(qqi,qqj))*2
+                        WX_matpnbasisP11_E101(qqi,qqj) = &
+                             !0.5*(WX_matP11_E101(qqi,qqj)+WX_matBP11_E101(qqi,qqj))
+                              real(WX_matP11_E101(qqi,qqj))*2
+                                 
+                end if
+                ! (row positive Omega, col negative Omega) 
+                if((qqi.Le.WX_sum_nd) .and.(qqj.gt.WX_sum_nd)) then 
+                        !-----------------------------E101
+                        WX_matpnbasisN11_E101(qqi,qqj) = &
+                            ! 0.5*cunit*(WX_matN11_E101(qqi,qqj-WX_sum_nd)-WX_matBN11_E101(qqi,qqj-WX_sum_nd))
+                             +aimag(WX_matN11_E101(qqi,qqj-WX_sum_nd))*2
+                        WX_matpnbasisP11_E101(qqi,qqj) = &
+                            ! 0.5*cunit*(WX_matP11_E101(qqi,qqj-WX_sum_nd)-WX_matBP11_E101(qqi,qqj-WX_sum_nd))
+                             +aimag(WX_matP11_E101(qqi,qqj-WX_sum_nd))*2
+                end if
+                ! (row negative Omega, col positive Omega) 
+                if((qqi.gt.WX_sum_nd) .and.(qqj.Le.WX_sum_nd)) then 
+                        !-----------------------------E101
+                        WX_matpnbasisN11_E101(qqi,qqj) = &
+                            !-0.5*cunit*(WX_matN11_E101(qqi-WX_sum_nd,qqj)-WX_matBN11_E101(qqi-WX_sum_nd,qqj))
+                             -aimag(WX_matN11_E101(qqi-WX_sum_nd,qqj))*2
+                        WX_matpnbasisP11_E101(qqi,qqj) = &
+                            !-0.5*cunit*(WX_matP11_E101(qqi-WX_sum_nd,qqj)-WX_matBP11_E101(qqi-WX_sum_nd,qqj))
+                             -aimag(WX_matP11_E101(qqi-WX_sum_nd,qqj))*2
+                end if
+                ! (row negative Omega, col negative Omega) 
+                if((qqi.gt.WX_sum_nd) .and.(qqj.gt.WX_sum_nd)) then 
+                        !-----------------------------E101
+                        WX_matpnbasisN11_E101(qqi,qqj) = &
+                            ! 0.5*(WX_matN11_E101(qqi-WX_sum_nd,qqj-WX_sum_nd)+WX_matBN11_E101(qqi-WX_sum_nd,qqj-WX_sum_nd))
+                              real(WX_matN11_E101(qqi-WX_sum_nd,qqj-WX_sum_nd))*2
+                        WX_matpnbasisP11_E101(qqi,qqj) = &
+                            ! 0.5*(WX_matP11_E101(qqi-WX_sum_nd,qqj-WX_sum_nd)+WX_matBP11_E101(qqi-WX_sum_nd,qqj-WX_sum_nd))
+                              real(WX_matP11_E101(qqi-WX_sum_nd,qqj-WX_sum_nd))*2
+                end if
+             end do
+          end do
+          !----------------------------------QQend             
+
+
+         !=================================================
+         !=================================================
+         !=================================================
+
+         !Call WX_cal          
+          call WX_cal(nxy,Ph_nb, Ph_db, Ph_readin_select, &
+                     Ph_sum_db,Ph_sum_db_colm1, Ph_NumberofX, WX_sum_nd, & 
+                    !ReX%elem, ImX%elem, ReY%elem, ImY%elem, &
+                     dHqp_re%m12%elem, dHqp_im%m12%elem,dHqp_re%m21%elem, dHqp_im%m21%elem,  &  
+                     WX_matpnbasisN11_E101, WX_matpnbasisP11_E101, &
+                     Ph_ReWX, Ph_ImWX, Ph_ReWY, Ph_ImWY, &
+                     WgreenX, WgreenY,&
+                     WX_iHFB_NB,WX_pnbasis_select,X_select,Y_select)       
+
+            !h20re%elem = h20re%elem - Ph_mult*Ph_ReWX*W_omega 
+             dHqp_re%m12%elem = dHqp_re%m12%elem - Ph_mult*Ph_ReWX*W_omega
+            !h20Im%elem = h20Im%elem - Ph_mult*Ph_ImWX*W_omega 
+             dHqp_im%m12%elem = dHqp_im%m12%elem - Ph_mult*Ph_ReWX*W_omega
+             !
+            !h02re%elem = h02re%elem - Ph_mult*Ph_ReWY*W_omega 
+             dHqp_re%m21%elem = dHqp_re%m21%elem + Ph_mult*Ph_ReWX*W_omega
+            !h02Im%elem = h02Im%elem + Ph_mult*Ph_ImWY*W_omega    !!!Q: need '-' as (WY*)* conjg.
+             dHqp_im%m21%elem = dHqp_im%m21%elem - Ph_mult*Ph_ReWX*W_omega
+
+        !write(*,*) nxy, sizeof(Fqp), sizeof(dHqp_re), sizeof(dRqp_re)
+        !write(*,*) nxy, size(dHqp_re%m11%elem),size(dHqp_re%m12%elem),size(dHqp_re%m21%elem),size(dHqp_re%m22%elem)
+        !call effective_WX(nxy, dRqp_re%m12%elem, dRqp_im%m12%elem, dRqp_re%m21%elem,dRqp_im%m21%elem)
+
+
+
+
+
+           ! h20re%elem = h20re%elem + 5.000*Ph_ReWX 
+           ! h20Im%elem = h20Im%elem + 5.000*Ph_ImWX 
+           ! !
+           ! h02re%elem = h02re%elem + 5.000*Ph_ReWY 
+           ! h02Im%elem = h02Im%elem - 5.000*Ph_ImWY    !!!Q: need '-' as (WY*)* conjg.
+ 
+ 
+
+      !end if    ! file_exists
+      !   end do ! which_ph
+      !   end do ! which_k
+      !   end do ! which_L
+      !   end do ! which_iso
+      end do    ! nph
+        end if  ! Ph_test
+      
+        !------------------------------------------QQend 
+
+
+
 
          ! Add the external field to perturbed hamiltonian (assuming real Fqp)
          call add_bbm(Fqp, dHqp_re)
